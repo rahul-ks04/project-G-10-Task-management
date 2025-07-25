@@ -1,0 +1,205 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Task Prioritizer & Assignor</title>
+    <!-- Google Fonts - Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light blue-gray background */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 1.5rem; /* Consistent padding around the content */
+        }
+        /* Custom styles for priority colors */
+        .priority-low { color: #22c55e; } /* Green */
+        .priority-medium { color: #facc15; } /* Yellow */
+        .priority-high { color: #f97316; } /* Orange */
+        .priority-critical { color: #ef4444; } /* Red */
+
+        /* Button gradient and shadow */
+        .btn-primary {
+            background-image: linear-gradient(to right, #6366f1, #8b5cf6); /* Indigo to Violet */
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+            transition: all 0.3s ease-in-out;
+        }
+        .btn-primary:hover {
+            background-image: linear-gradient(to right, #8b5cf6, #6366f1);
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.6);
+            transform: translateY(-2px);
+        }
+        .btn-primary:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 10px rgba(99, 102, 241, 0.3);
+        }
+
+        /* Input focus glow */
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl w-full max-w-3xl border border-gray-200">
+        <h1 class="text-4xl font-extrabold text-gray-900 mb-8 text-center leading-tight">
+            Smart Task Prioritizer <br class="sm:hidden"> & Assignor
+        </h1>
+
+        <!-- Input Form -->
+        <form id="taskForm" class="space-y-6">
+            <div>
+                <label for="task_description" class="block text-base font-medium text-gray-800 mb-2">Task Description:</label>
+                <textarea id="task_description" name="task_description" rows="5" required
+                          class="block w-full p-4 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-base resize-y"
+                          placeholder="e.g., 'Investigate and fix critical bug in payment gateway API integration.'"></textarea>
+            </div>
+            <div>
+                <label for="due_date" class="block text-base font-medium text-gray-800 mb-2">Due Date (Optional):</label>
+                <input type="date" id="due_date" name="due_date"
+                       class="block w-full p-4 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-base">
+            </div>
+            <button type="submit"
+                    class="w-full btn-primary text-white font-semibold py-4 px-6 rounded-lg text-lg">
+                Predict Priority & Assign Task
+            </button>
+        </form>
+
+        <!-- Prediction Results -->
+        <div id="results" class="mt-10 p-7 bg-indigo-50 rounded-xl border border-indigo-200 shadow-inner hidden transition-all duration-500 ease-in-out transform scale-95 opacity-0">
+            <h2 class="text-2xl font-bold text-indigo-800 mb-5 text-center">Prediction Results</h2>
+            <div class="space-y-3">
+                <p class="text-lg text-gray-800"><strong>Task:</strong> <span id="result_task_desc" class="font-normal"></span></p>
+                <p class="text-lg text-gray-800 flex items-center">
+                    <strong>Predicted Priority:</strong>
+                    <span id="result_priority" class="font-extrabold ml-2 text-xl"></span>
+                </p>
+                <p class="text-lg text-gray-800 flex items-center">
+                    <strong>Assigned To:</strong>
+                    <span id="result_assigned_user" class="font-bold ml-2 text-indigo-700"></span>
+                </p>
+            </div>
+        </div>
+
+        <!-- Current Workloads -->
+        <div class="mt-10 p-7 bg-gray-50 rounded-xl border border-gray-200 shadow-inner">
+            <h2 class="text-2xl font-bold text-gray-800 mb-5 text-center">Current Team Workloads</h2>
+            <ul id="workload_list" class="space-y-3">
+                <!-- Workloads will be dynamically inserted here by JavaScript -->
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('taskForm');
+            const resultsDiv = document.getElementById('results');
+            const resultTaskDesc = document.getElementById('result_task_desc');
+            const resultPriority = document.getElementById('result_priority');
+            const resultAssignedUser = document.getElementById('result_assigned_user');
+            const workloadList = document.getElementById('workload_list');
+
+            // Function to update workload display
+            function updateWorkloads(workloads) {
+                workloadList.innerHTML = ''; // Clear previous list
+                const sortedUsers = Object.keys(workloads).sort((a, b) => workloads[a] - workloads[b]); // Sort by workload
+
+                sortedUsers.forEach(user => {
+                    const li = document.createElement('li');
+                    li.className = 'flex justify-between items-center text-gray-700 bg-white p-3 rounded-lg shadow-sm border border-gray-100';
+                    li.innerHTML = `
+                        <span class="font-medium text-gray-800">${user}</span>
+                        <span class="px-4 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-semibold">${workloads[user]} tasks</span>
+                    `;
+                    workloadList.appendChild(li);
+                });
+            }
+
+            // Initial load of workloads (from Flask context)
+            const initialWorkloads = {{ current_workloads | tojson }};
+            updateWorkloads(initialWorkloads);
+
+            form.addEventListener('submit', async function(event) {
+                event.preventDefault(); // Prevent default form submission
+
+                const formData = new FormData(form);
+                const taskDescription = formData.get('task_description');
+                const dueDate = formData.get('due_date');
+
+                // Basic client-side validation
+                if (!taskDescription.trim()) {
+                    alert('Task description cannot be empty.');
+                    return;
+                }
+
+                try {
+                    // Show a subtle loading indicator (e.g., disable button)
+                    const submitButton = form.querySelector('button[type="submit"]');
+                    submitButton.textContent = 'Predicting...';
+                    submitButton.disabled = true;
+                    submitButton.classList.add('opacity-70', 'cursor-not-allowed');
+
+                    const response = await fetch('/predict', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+
+                    resultTaskDesc.textContent = data.task_description;
+                    resultPriority.textContent = data.predicted_priority;
+                    resultAssignedUser.textContent = data.assigned_user || 'N/A';
+
+                    // Apply color based on priority
+                    resultPriority.classList.remove('priority-low', 'priority-medium', 'priority-high', 'priority-critical');
+                    switch(data.predicted_priority) {
+                        case 'Low':
+                            resultPriority.classList.add('priority-low');
+                            break;
+                        case 'Medium':
+                            resultPriority.classList.add('priority-medium');
+                            break;
+                        case 'High':
+                            resultPriority.classList.add('priority-high');
+                            break;
+                        case 'Critical':
+                            resultPriority.classList.add('priority-critical');
+                            break;
+                        default:
+                            resultPriority.classList.add('text-gray-700');
+                    }
+
+                    // Animate results div
+                    resultsDiv.classList.remove('hidden', 'opacity-0', 'scale-95');
+                    resultsDiv.classList.add('opacity-100', 'scale-100');
+
+                    updateWorkloads(data.current_workloads); // Update workload display
+
+                } catch (error) {
+                    console.error('Error during prediction:', error);
+                    alert('An error occurred during prediction. Please check the console for details.');
+                } finally {
+                    // Re-enable button
+                    const submitButton = form.querySelector('button[type="submit"]');
+                    submitButton.textContent = 'Predict Priority & Assign Task';
+                    submitButton.disabled = false;
+                    submitButton.classList.remove('opacity-70', 'cursor-not-allowed');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
